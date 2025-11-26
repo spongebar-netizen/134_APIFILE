@@ -7,18 +7,30 @@ module.exports = (sequelize, DataTypes) => {
     /**
      * Helper method for defining associations.
      * This method is not a part of Sequelize lifecycle.
-     * The `models/index` file will call this method automatically.
+     * The `models/index.js` file will call this method automatically.
      */
     static associate(models) {
-      // define association here
+      // RELASI: User bisa punya BANYAK Komik (One-to-Many)
+      User.hasMany(models.Komik, {
+        foreignKey: 'userId', // Kuncinya ada di kolom 'userId' di tabel komik
+        as: 'list_komik'      // Nanti pas dipanggil di Postman namanya 'list_komik'
+      });
     }
   }
   User.init({
-    username: DataTypes.STRING,
-    password: DataTypes.STRING
+    username: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true
+    },
+    password: {
+      type: DataTypes.STRING,
+      allowNull: false
+    }
   }, {
     sequelize,
     modelName: 'User',
+    tableName: 'users' // Pastikan nama tabelnya 'users'
   });
   return User;
 };

@@ -2,161 +2,110 @@ const express = require('express');
 const app = express();
 const port = 3000;
 
-// Import semua model dan koneksi Sequelize
-const db = require('./models'); // <-- Ini akan membaca models/index.js
+// Import
+const db = require('./models');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const authenticateToken = require('./middleware/auth'); // Pastikan file ini ada dari copy-an sebelumnya
 
-// Middleware untuk parsing body JSON
 app.use(express.json());
 
-// ===============================================
-// ===           JALANKAN SERVER               ===
-// ===============================================
-app.listen(port, async () => {
-    console.log('Server is running on http://localhost:${port}');
-    try {
-        // Kita HANYA tes koneksi, TIDAK pakai sync()
-        // karena tabel sudah kita buat manual
-        await db.sequelize.authenticate();
-        console.log('Successfully connected to the MySQL database.');
+// =========================================================
+// 1. AUTHENTICATION (Sama kayak Praktikum 5 - Biar bisa Login)
+// =========================================================
 
-    } catch (error) {
-        console.error('Unable to connect to the database:', error);
-    }
+app.post('/register', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const newUser = await db.User.create({ username, password: hashedPassword });
+        res.status(201).json({ message: 'User created', data: newUser });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ===============================================
-// ===     RUTE-RUTE UNTUK OPERASI CRUD        ===
-// ===============================================
+app.post('/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        const user = await db.User.findOne({ where: { username } });
+        
+        if (!user || !await bcrypt.compare(password, user.password)) {
+            return res.status(401).json({ message: 'Username atau Password salah' });
+        }
+        
+        // Token nyimpen ID user
+        const token = jwt.sign({ id: user.id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        res.json({ message: 'Login success', token });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
-// CREATE: Menambahkan data komik baru
-app.post('/komik', async (req, res) => {
+// =========================================================
+// 2. RELASI DATA & QUERY LANJUTAN (INTI PRAKTIKUM 7)
+// =========================================================
+
+// A. CREATE KOMIK (Otomatis deteksi User Pemilik)
+app.post('/komik', authenticateToken, async (req, res) => {
     try {
         const { judul, penulis, deskripsi } = req.body;
+        
+        // KEAJAIBAN 1: Kita ambil ID user dari Token (req.user.id)
+        // Jadi gak perlu input userId manual di body
+        const userId = req.user.id; 
 
-        if (!judul) {
-            return res.status(400).json({
-                success: false,
-                message: 'Judul wajib diisi!'
-            });
-        }
-
-        // Buat data baru
         const komikBaru = await db.Komik.create({ 
-            judul: judul, 
-            penulis: penulis, 
-            deskripsi: deskripsi 
+            judul, 
+            penulis, 
+            deskripsi,
+            userId: userId // <-- Disimpan otomatis sebagai Foreign Key
         });
 
-        res.status(201).json({
-            success: true,
-            message: 'Komik berhasil ditambahkan',
-            data: komikBaru
-        });
-
+        res.status(201).json({ success: true, data: komikBaru });
     } catch (error) {
-        console.error('Error adding komik:', error);
-        res.status(500).json({ success: false, message: 'Internal Server Error' });
+        res.status(500).json({ message: error.message });
     }
 });
 
-// READ: Mengambil semua data komik
-app.get('/komik', async (req, res) => {
+// B. QUERY LANJUTAN 1: Get All Users + Komik Mereka
+// (Menampilkan Bos beserta Anak Buahnya)
+app.get('/users-with-komik', authenticateToken, async (req, res) => {
     try {
-        const semuaKomik = await db.Komik.findAll();
-
-        res.status(200).json({
-            success: true,
-            message: 'Data komik berhasil diambil',
-            data: semuaKomik
+        const users = await db.User.findAll({
+            // KEAJAIBAN 2: 'include' itu kayak JOIN di SQL
+            include: [{
+                model: db.Komik,
+                as: 'list_komik', // Harus sama kayak di models/user.js
+                attributes: ['judul', 'penulis'] // Kita cuma ambil kolom judul & penulis biar rapi
+            }]
         });
-
+        res.json(users);
     } catch (error) {
-        console.error('Error fetching komik:', error);
-        res.status(500).json({ success: false, message: 'Internal Server Error' });
+        res.status(500).json({ message: error.message });
     }
 });
 
-// READ: Mengambil satu data komik berdasarkan ID
-app.get('/komik/:id', async (req, res) => {
+// C. QUERY LANJUTAN 2: Get All Komik + Pemiliknya
+// (Menampilkan Anak Buah beserta Bosnya)
+app.get('/komik-with-owner', authenticateToken, async (req, res) => {
     try {
-        const id = req.params.id;
-        const komik = await db.Komik.findByPk(id);
-
-        if (!komik) {
-            return res.status(404).json({
-                success: false,
-                message: 'Komik tidak ditemukan'
-            });
-        }
-
-        res.status(200).json({
-            success: true,
-            message: 'Data komik berhasil diambil',
-            data: komik
+        const komiks = await db.Komik.findAll({
+            include: [{
+                model: db.User,
+                as: 'pemilik', // Harus sama kayak di models/komik.js
+                attributes: ['username'] // Kita cuma mau tau nama username pemiliknya
+            }]
         });
-
-    } catch (error)
-        {
-        console.error('Error fetching komik by id:', error);
-        res.status(500).json({ success: false, message: 'Internal Server Error' });
+        res.json(komiks);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
     }
 });
 
-// UPDATE: Mengubah data komik berdasarkan ID
-app.put('/komik/:id', async (req, res) => {
-    try {
-        const id = req.params.id;
-        const { judul, penulis, deskripsi } = req.body;
-
-        const komik = await db.Komik.findByPk(id);
-        if (!komik) {
-            return res.status(404).json({
-                success: false,
-                message: 'Komik tidak ditemukan'
-            });
-        }
-
-        // Lakukan update
-        await komik.update({
-            judul: judul,
-            penulis: penulis,
-            deskripsi: deskripsi
-        });
-
-        res.status(200).json({
-            success: true,
-            message: 'Komik berhasil diupdate',
-            data: komik // Kirim data yang sudah diupdate
-        });
-
-    } catch (error) {
-        console.error('Error updating komik:', error);
-        res.status(500).json({ success: false, message: 'Internal Server Error' });
-    }
-});
-
-// DELETE: Menghapus data komik berdasarkan ID
-app.delete('/komik/:id', async (req, res) => {
-    try {
-        const id = req.params.id;
-        const komik = await db.Komik.findByPk(id);
-        if (!komik) {
-            return res.status(404).json({
-                success: false,
-                message: 'Komik tidak ditemukan'
-            });
-        }
-
-        // Hapus data
-        await komik.destroy();
-
-        res.status(200).json({
-            success: true,
-            message: 'Komik berhasil dihapus'
-        });
-
-    } catch (error) {
-        console.error('Error deleting komik:', error);
-        res.status(500).json({ success: false, message: 'Internal Server Error' });
+// Jalankan Server
+app.listen(port, async () => {
+    console.log(`Server jalan di http://localhost:${port}`);
+    try { 
+        await db.sequelize.authenticate(); 
+        console.log('Database Konek! Relasi Siap!'); 
+    } catch (err) { 
+        console.error(err); 
     }
 });
