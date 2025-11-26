@@ -1,61 +1,47 @@
 const express = require('express');
-const app = express();
-const port = 3000;
+const dotenv = require('dotenv');
+const db = require('./models'); // Import Database
 
-// Import
-const db = require('./models');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const authenticateToken = require('./middleware/auth'); // Pastikan file ini ada dari copy-an sebelumnya
+// 1. IMPORT ROUTES DARI PERBAIKAN SEBELUMNYA
+// Pastikan file routes/auth.js masih ada dan isinya benar
+const authRoutes = require('./routes/auth'); 
+
+// 2. IMPORT MIDDLEWARE (Wajib ada file middleware/auth.js)
+const authenticateToken = require('./middleware/auth.js'); 
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // =========================================================
-// 1. AUTHENTICATION (Sama kayak Praktikum 5 - Biar bisa Login)
+// 1. AUTHENTICATION (Login & Register)
 // =========================================================
+// Aksesnya jadi: POST http://localhost:3000/auth/register
+// Aksesnya jadi: POST http://localhost:3000/auth/login
+app.use('/auth', authRoutes);
 
-app.post('/register', async (req, res) => {
-    try {
-        const { username, password } = req.body;
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const newUser = await db.User.create({ username, password: hashedPassword });
-        res.status(201).json({ message: 'User created', data: newUser });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.post('/login', async (req, res) => {
-    try {
-        const { username, password } = req.body;
-        const user = await db.User.findOne({ where: { username } });
-        
-        if (!user || !await bcrypt.compare(password, user.password)) {
-            return res.status(401).json({ message: 'Username atau Password salah' });
-        }
-        
-        // Token nyimpen ID user
-        const token = jwt.sign({ id: user.id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '1h' });
-        res.json({ message: 'Login success', token });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
 
 // =========================================================
-// 2. RELASI DATA & QUERY LANJUTAN (INTI PRAKTIKUM 7)
+// 2. RELASI DATA & QUERY LANJUTAN (KOMIK)
 // =========================================================
 
-// A. CREATE KOMIK (Otomatis deteksi User Pemilik)
+// A. CREATE KOMIK (Harus Login Dulu -> pakai authenticateToken)
 app.post('/komik', authenticateToken, async (req, res) => {
     try {
         const { judul, penulis, deskripsi } = req.body;
         
-        // KEAJAIBAN 1: Kita ambil ID user dari Token (req.user.id)
-        // Jadi gak perlu input userId manual di body
+        // KEAJAIBAN: Ambil ID user dari Token yang sedang login
         const userId = req.user.id; 
 
         const komikBaru = await db.Komik.create({ 
             judul, 
             penulis, 
             deskripsi,
-            userId: userId // <-- Disimpan otomatis sebagai Foreign Key
+            userId: userId // Disimpan otomatis sebagai Foreign Key
         });
 
         res.status(201).json({ success: true, data: komikBaru });
@@ -64,16 +50,14 @@ app.post('/komik', authenticateToken, async (req, res) => {
     }
 });
 
-// B. QUERY LANJUTAN 1: Get All Users + Komik Mereka
-// (Menampilkan Bos beserta Anak Buahnya)
+// B. GET USERS + KOMIK MEREKA (Menampilkan User dan Komik buatannya)
 app.get('/users-with-komik', authenticateToken, async (req, res) => {
     try {
         const users = await db.User.findAll({
-            // KEAJAIBAN 2: 'include' itu kayak JOIN di SQL
             include: [{
                 model: db.Komik,
-                as: 'list_komik', // Harus sama kayak di models/user.js
-                attributes: ['judul', 'penulis'] // Kita cuma ambil kolom judul & penulis biar rapi
+                as: 'list_komik', // Pastikan di models/user.js aliasnya 'list_komik'
+                attributes: ['judul', 'penulis']
             }]
         });
         res.json(users);
@@ -82,15 +66,14 @@ app.get('/users-with-komik', authenticateToken, async (req, res) => {
     }
 });
 
-// C. QUERY LANJUTAN 2: Get All Komik + Pemiliknya
-// (Menampilkan Anak Buah beserta Bosnya)
+// C. GET KOMIK + PEMILIKNYA (Menampilkan Komik dan Siapa pembuatnya)
 app.get('/komik-with-owner', authenticateToken, async (req, res) => {
     try {
         const komiks = await db.Komik.findAll({
             include: [{
                 model: db.User,
-                as: 'pemilik', // Harus sama kayak di models/komik.js
-                attributes: ['username'] // Kita cuma mau tau nama username pemiliknya
+                as: 'pemilik', // Pastikan di models/komik.js aliasnya 'pemilik'
+                attributes: ['username']
             }]
         });
         res.json(komiks);
@@ -99,13 +82,58 @@ app.get('/komik-with-owner', authenticateToken, async (req, res) => {
     }
 });
 
-// Jalankan Server
-app.listen(port, async () => {
-    console.log(`Server jalan di http://localhost:${port}`);
-    try { 
-        await db.sequelize.authenticate(); 
-        console.log('Database Konek! Relasi Siap!'); 
-    } catch (err) { 
-        console.error(err); 
+// =========================================================
+// D. UPDATE KOMIK (FITUR BARU YANG KAMU MINTA)
+// =========================================================
+app.put('/komik/:id', authenticateToken, async (req, res) => {
+    try {
+        // 1. Ambil ID dari URL (misal: localhost:3000/komik/1)
+        const { id } = req.params;
+        
+        // 2. Ambil Data Baru dari Body Postman
+        const { judul, penulis, deskripsi } = req.body;
+
+        // 3. Cari dulu komiknya ada gak?
+        const komik = await db.Komik.findByPk(id);
+
+        if (!komik) {
+            return res.status(404).json({ message: "Komik tidak ditemukan!" });
+        }
+
+        // 4. (Opsional) Cek apakah user yang login adalah pemilik komik?
+        // Kalau mau sembarang user login bisa edit, hapus if ini.
+        if (komik.userId !== req.user.id) {
+            return res.status(403).json({ message: "Kamu bukan pemilik komik ini, dilarang edit!" });
+        }
+
+        // 5. Lakukan Update
+        await komik.update({
+            judul: judul || komik.judul,       // Kalau kosong, pakai data lama
+            penulis: penulis || komik.penulis, 
+            deskripsi: deskripsi || komik.deskripsi
+        });
+
+        res.json({
+            success: true,
+            message: "Komik berhasil diupdate!",
+            data: komik
+        });
+
+    } catch (error) {
+        res.status(500).json({ message: error.message });
     }
 });
+
+// =========================================================
+// START SERVER
+// =========================================================
+db.sequelize.sync({ force: false })
+    .then(() => {
+        console.log("✅ Database PostgreSQL Terkoneksi!");
+        app.listen(PORT, () => {
+            console.log(`🚀 Server berjalan di http://localhost:${PORT}`);
+        });
+    })
+    .catch((err) => {
+        console.error("❌ Gagal koneksi ke database:", err.message);
+    });
