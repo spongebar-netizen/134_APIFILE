@@ -1,37 +1,31 @@
 'use strict';
-/** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    await queryInterface.createTable('Komiks', {
+    await queryInterface.createTable('komik', { // <-- Ganti jadi 'komik' (kecil)
       id: {
         allowNull: false,
         autoIncrement: true,
         primaryKey: true,
         type: Sequelize.INTEGER
       },
-      judul: {
-        type: Sequelize.STRING
-      },
-      penulis: {
-        type: Sequelize.STRING
-      },
-      deskripsi: {
-        type: Sequelize.TEXT
-      },
-      userId: {
-        type: Sequelize.INTEGER
-      },
-      createdAt: {
+      judul: { type: Sequelize.STRING },
+      penulis: { type: Sequelize.STRING },
+      deskripsi: { type: Sequelize.TEXT },
+      userId: {  // <--- INI KUNCI RELASINYA
+        type: Sequelize.INTEGER,
         allowNull: false,
-        type: Sequelize.DATE
+        references: {
+          model: 'users', // Nyambung ke tabel 'users'
+          key: 'id'       // Nyambung ke kolom 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE' // Kalo user dihapus, komiknya ikut kehapus
       },
-      updatedAt: {
-        allowNull: false,
-        type: Sequelize.DATE
-      }
+      createdAt: { allowNull: false, type: Sequelize.DATE },
+      updatedAt: { allowNull: false, type: Sequelize.DATE }
     });
   },
   async down(queryInterface, Sequelize) {
-    await queryInterface.dropTable('Komiks');
+    await queryInterface.dropTable('komik');
   }
 };
