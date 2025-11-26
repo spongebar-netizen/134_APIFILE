@@ -1,42 +1,31 @@
-// config/config.js
+require('dotenv').config(); // Load file .env
 
-// Memuat variabel lingkungan dari file .env
-require('dotenv').config(); 
+// Ambil variabel dari .env
+const { DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT } = process.env;
 
 module.exports = {
-  // Lingkungan Development (Saat kamu coding di laptop)
   development: {
-    username: process.env.DB_USERNAME || 'root',
-    password: process.env.DB_PASSWORD || null,
-    database: process.env.DB_NAME || 'orm', // JANGAN LUPA GANTI INI
-    host: process.env.DB_HOST || '127.0.0.1',
-    
-    // ======================================================
-    // ===          PERBAIKANNYA ADA DI SINI          ===
-    // ======================================================
-    port: process.env.DB_PORT || 3309, // <-- Tambahkan port di sini
-    // ======================================================
-
-    dialect: 'mysql'
+    username: DB_USER,
+    password: DB_PASSWORD,
+    database: DB_NAME,
+    host: DB_HOST,
+    port: DB_PORT,
+    dialect: "postgres", // <--- PENTING: Ganti 'mysql' jadi 'postgres'
   },
-  
-  // Lingkungan Test (Saat menjalankan testing otomatis)
   test: {
-    username: process.env.DB_USERNAME || 'root',
-    password: process.env.DB_PASSWORD || null,
-    database: process.env.DB_NAME_TEST || 'orm',
-    host: '127.0.0.1',
-    port: process.env.DB_PORT || 3309, // <-- Tambahkan juga di sini
-    dialect: 'mysql'
+    username: DB_USER,
+    password: DB_PASSWORD,
+    database: DB_NAME + "_test",
+    host: DB_HOST,
+    port: DB_PORT,
+    dialect: "postgres",
   },
-  
-  // Lingkungan Production (Saat aplikasi sudah online/live)
   production: {
-    username: process.env.DB_USERNAME_PROD,
-    password: process.env.DB_PASSWORD_PROD,
-    database: process.env.DB_NAME_PROD,
-    host: process.env.DB_HOST_PROD,
-    port: process.env.DB_PORT_PROD, // <-- Di production, wajib dari .env
-    dialect: 'mysql'
-  }
+    username: DB_USER,
+    password: DB_PASSWORD,
+    database: DB_NAME + "_prod",
+    host: DB_HOST,
+    port: DB_PORT,
+    dialect: "postgres",
+  },
 };
